@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>RSVP App</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <style>
+    :root { --bg:#0b1320; --card:#121a2b; --text:#e9f0ff; --accent:#5dd2a1; --muted:#9db0d7; --border:#1b2740; }
+    *{box-sizing:border-box}
+    body{margin:0;background:var(--bg);color:var(--text);font-family:system-ui,Arial,sans-serif}
+    .wrap{max-width:1100px;margin:40px auto;padding:16px}
+    h1{font-size:28px;margin:0 0 10px} p{color:var(--muted)}
+    .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(290px,1fr));gap:16px;margin-top:18px}
+    .card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:16px;box-shadow:0 6px 24px rgba(0,0,0,.25)}
+    label{display:block;font-size:13px;color:var(--muted);margin:10px 0 6px}
+    input,select,textarea{width:100%;padding:10px;border-radius:10px;border:1px solid #2a3a5d;background:#0f1626;color:var(--text)}
+    button{margin-top:10px;padding:11px 12px;border-radius:10px;border:0;background:var(--accent);color:#07131a;font-weight:700;cursor:pointer}
+    button.secondary{background:#284a68;color:#e5f4ff}
+    .row{display:flex;gap:10px;flex-wrap:wrap}
+    pre{background:#0f1626;border:1px solid #223456;color:#dff3ff;border-radius:12px;padding:12px;overflow:auto;max-height:320px}
+    .badge{display:inline-block;background:#1b2740;border:1px solid #30466f;color:#a5c1ff;padding:3px 8px;border-radius:999px;font-size:12px}
+    small.muted{color:var(--muted)}
+    /* RSVP screen */
+    .rsvp-screen{
+      display:flex;align-items:center;justify-content:center;
+      height:190px;margin-top:8px;border-radius:14px;background:#0f1626;border:1px solid #223456;
+      font-variant-ligatures:none;
+    }
+    .rsvp-word{font-size:48px;line-height:1.15;letter-spacing:0.5px;font-weight:700;font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;}
+    .rsvp-word .pre{opacity:.7}
+    .rsvp-word .pivot{color:var(--accent)}
+    .rsvp-word .post{opacity:.85}
+    .controls .row{align-items:center}
+    .meter{height:8px;width:100%;background:#0f1626;border:1px solid #223456;border-radius:10px;overflow:hidden}
+    .meter > span{display:block;height:100%;background:var(--accent);width:0%}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>🚀 RSVP App</h1>
+    <p>Genera un texto con tu API (Gemini) y léelo en modo RSVP.</p>
+
+    <div class="grid">
+      <!-- Generación de texto -->
+      <div class="card">
+        <div class="badge">Generador</div>
+        <label>Tema</label>
+        <input id="topic" type="text" placeholder="quantum physics" value="comida peruana" />
+        <div class="row">
+          <button onclick="createRsvp()">Generate RSVP (Gemini)</button>
+          <button class="secondary" onclick="pasteSample()">Paste sample</button>
+        </div>
+        <small class="muted">El texto generado alimenta el lector RSVP de la derecha.</small>
+      </div>
+
+      <!-- Lector RSVP -->
+      <div class="card controls">
+        <div class="badge">RSVP Reader</div>
+        <div class="rsvp-screen"><div id="rsvpScreen" class="rsvp-word">Ready</div></div>
+
+        <div class="row" style="margin-top:12px">
+          <button id="btnPlay" onclick="playRSVP()">▶ Play</button>
+          <button class="secondary" onclick="pauseRSVP()">⏸ Pause</button>
+          <button class="secondary" onclick="stopRSVP()">⏹ Stop</button>
+          <button class="secondary" onclick="jump(-10)">⏪ -10</button>
+          <button class="secondary" onclick="jump(+10)">⏩ +10</button>
+        </div>
+
+        <div class="row" style="margin-top:6px">
+          <label style="min-width:120px">WPM</label>
+          <input id="wpm" type="range" min="120" max="900" value="320" oninput="updateWPMLabel(this.value)" style="flex:1"/>
+          <input id="wpmLabel" type="text" value="320" style="width:80px;text-align:center" oninput="syncWPM(this.value)"/>
+        </div>
+
+        <div class="row">
+          <label style="min-width:120px">Chunk (palabras x frame)</label>
+          <select id="chunkSize" onchange="resetChunks()">
+            <option value="1" selected>1</option>
+            <option value="2">2</option>
+            <option value="3">3</option>
+          </select>
+
+          <label style="min-width:120px">Texto fuente</label>
+          <select id="sourceMode" onchange="resetChunks()">
+            <option value="generated" selected>Generado</option>
+            <option value="manual">Manual</option>
+          </select>
+        </div>
+
+        <label>Texto manual (opcional)</label>
+        <textarea id="manualText" rows="4" placeholder="Pega un texto aquí si quieres leer algo manualmente..."></textarea>
+
+        <div class="row" style="width:100%;margin-top:10px">
+          <div class="meter" style="flex:1"><span id="meterBar"></span></div>
+          <div style="min-width:120px;text-align:right"><span id="idxLabel">0 / 0</span></div>
+        </div>
+      </div>
+
+      <!-- Quiz -->
+      <div class="card">
+        <div class="badge">Quiz (desde el texto)</div>
+        <div class="row">
+          <button onclick="createQuiz()">Create Quiz</button>
+          <button class="secondary" onclick="renderQuiz()">Render Quiz UI</button>
+        </div>
+        <div id="quizArea" style="margin-top:10px"></div>
+        <button class="secondary" onclick="submitQuiz()">Validate Quiz</button>
+      </div>
+    </div>
+
+    <h3 style="margin-top:26px">Output</h3>
+    <pre id="out">Ready.</pre>
+  </div>
+
+<script>
+  // ========= CONFIG =========
+  const BASE = ""; // mismo origen
+
+  // ========= STATE =========
+  let LAST_TEXT = "";
+  let LAST_WORDS = [];
+  let LAST_QUESTIONS = [];
+
+  // RSVP state
+  let tokens = [];
+  let frameIdx = 0;
+  let timer = null;
+  let playing = false;
+
+  const $ = (id)=>document.getElementById(id);
+  const screen = $("rsvpScreen");
+  const meterBar = $("meterBar");
+  const idxLabel = $("idxLabel");
+
+  function setOut(obj){ $("out").textContent = typeof obj === "string" ? obj : JSON.stringify(obj,null,2); }
+
+  // ========= GENERAR TEXTO (GEMINI) =========
+  async function createRsvp(){
+    try{
+      const res = await fetch(`${BASE}/api/rsvp`,{
+        method:"POST",
+        headers:{ "Content-Type":"application/json" },
+        body: JSON.stringify({
+          topic: $("topic").value.trim() || "tema de ejemplo",
+          palabras_objetivo: 250,
+          num_preguntas: 5
+        })
+      });
+      const data = await res.json();
+      if(data?.texto){
+        LAST_TEXT = data.texto;
+        LAST_WORDS = Array.isArray(data.palabras) ? data.palabras : tokenize(data.texto);
+        feedReaderFromGenerated();
+      }
+      setOut(data);
+    }catch(e){ setOut(String(e)); }
+  }
+
+  function pasteSample(){
+    LAST_TEXT = "La gastronomía peruana es diversa y rica en influencias culturales. Su cocina combina sabores andinos, españoles, africanos y asiáticos...";
+    LAST_WORDS = tokenize(LAST_TEXT);
+    feedReaderFromGenerated();
+    setOut({info:"Sample pasted"});
+  }
+
+  // ========= RSVP =========
+  function tokenize(txt){
+    return (txt||"").trim().split(/\s+/).filter(Boolean);
+  }
+
+  function buildFrames(words, chunk){
+    const frames = [];
+    for(let i=0;i<words.length;i+=chunk){
+      frames.push(words.slice(i, i+chunk));
+    }
+    return frames;
+  }
+
+  function pivotize(word){
+    // ORP aproximado: 1-char en palabras cortas, 2-3 en medias, 3-4 en largas
+    const len = word.length;
+    const pivotPos = len<=4 ? 1 : len<=7 ? 2 : 3;
+    const i = Math.min(pivotPos, len-1);
+    return `<span class="pre">${escapeHTML(word.slice(0,i))}</span><span class="pivot">${escapeHTML(word[i]||"")}</span><span class="post">${escapeHTML(word.slice(i+1))}</span>`;
+  }
+
+  function renderFrame(frame){
+    if(!frame || !frame.length){ screen.innerHTML = "—"; return; }
+    if(frame.length===1){
+      screen.innerHTML = pivotize(frame[0]);
+    }else{
+      // para grupos, resaltamos pivote en la primera palabra
+      const first = pivotize(frame[0]);
+      const rest = frame.slice(1).map(w=>escapeHTML(w)).join(" ");
+      screen.innerHTML = `${first} ${rest}`;
+    }
+  }
+
+  function updateProgress(){
+    const total = tokens.length;
+    const pct = total? (100 * frameIdx / total): 0;
+    meterBar.style.width = `${pct}%`;
+    idxLabel.textContent = `${Math.min(frameIdx,total)} / ${total}`;
+  }
+
+  function updateWPMLabel(val){ $("wpmLabel").value = val; }
+  function syncWPM(val){ $("wpm").value = Math.max(120, Math.min(900, Number(val)||320)); $("wpmLabel").value = $("wpm").value; }
+
+  function currentSourceWords(){
+    const mode = $("sourceMode").value;
+    if(mode==="manual"){
+      return tokenize($("manualText").value);
+    }
+    return LAST_WORDS.length ? LAST_WORDS : tokenize(LAST_TEXT);
+  }
+
+  function resetChunks(){
+    stopRSVP(false);
+    const words = currentSourceWords();
+    const chunk = Number($("chunkSize").value)||1;
+    tokens = buildFrames(words, chunk);
+    frameIdx = 0;
+    renderFrame(tokens[0]);
+    updateProgress();
+  }
+
+  function feedReaderFromGenerated(){
+    $("sourceMode").value = "generated";
+    $("manualText").value = "";
+    resetChunks();
+  }
+
+  function step(){
+    if(!playing) return;
+    if(frameIdx >= tokens.length){
+      stopRSVP(false); return;
+    }
+    renderFrame(tokens[frameIdx]);
+    updateProgress();
+    frameIdx++;
+    const wpm = Number($("wpm").value)||320;
+    const chunk = Number($("chunkSize").value)||1;
+    const delay = (60000 / wpm) * chunk; // ms por frame para respetar WPM
+    timer = setTimeout(step, delay);
+  }
+
+  function playRSVP(){
+    if(!tokens.length) resetChunks();
+    if(playing) return;
+    playing = true;
+    $("btnPlay").disabled = true;
+    step();
+  }
+
+  function pauseRSVP(){
+    playing = false;
+    $("btnPlay").disabled = false;
+    if(timer){ clearTimeout(timer); timer = null; }
+  }
+
+  function stopRSVP(reset=true){
+    pauseRSVP();
+    if(reset){ frameIdx = 0; renderFrame(tokens[0]); updateProgress(); }
+  }
+
+  function jump(n){
+    if(!tokens.length) return;
+    frameIdx = Math.max(0, Math.min(tokens.length, frameIdx + n));
+    renderFrame(tokens[frameIdx]);
+    updateProgress();
+  }
+
+  function escapeHTML(s){ return (s||"").replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+  // ========= QUIZ (usa el texto actual) =========
+  async function createQuiz(){
+    const text = $("sourceMode").value==="manual" ? $("manualText").value : LAST_TEXT;
+    if(!text){ return alert("Primero genera o pega un texto."); }
+    const n = 5;
+    try{
+      const res = await fetch(`${BASE}/api/quiz`,{
+        method:"POST",
+        headers:{ "Content-Type":"application/json" },
+        body: JSON.stringify({ texto: text, num_preguntas: n })
+      });
+      const data = await res.json();
+      LAST_QUESTIONS = data?.preguntas || [];
+      setOut(data);
+    }catch(e){ setOut(String(e)); }
+  }
+
+  function renderQuiz(){
+    const wrap = $("quizArea");
+    wrap.innerHTML = "";
+    if(!LAST_QUESTIONS.length){ wrap.innerHTML="<small>No hay preguntas aún. Clic en 'Create Quiz' primero.</small>"; return; }
+    LAST_QUESTIONS.forEach((q,qi)=>{
+      const div = document.createElement("div");
+      div.style.margin="6px 0 14px";
+      div.innerHTML = `<b>${qi+1}.</b> ${escapeHTML(q.pregunta)}`;
+      const ul = document.createElement("div");
+      q.opciones.forEach((opt, idx)=>{
+        const id = `q${qi}_opt${idx}`;
+        ul.innerHTML += `
+          <div style="margin-top:6px">
+            <label style="display:flex;gap:8px;align-items:center">
+              <input type="radio" name="q${qi}" value="${idx}" id="${id}" />
+              <span>${escapeHTML(opt)}</span>
+            </label>
+          </div>`;
+      });
+      wrap.appendChild(div);
+      wrap.appendChild(ul);
+    });
+  }
+
+  function submitQuiz(){
+    if(!LAST_QUESTIONS.length) return alert("Crea y renderiza un quiz primero");
+    let correct = 0;
+    const results = LAST_QUESTIONS.map((q,qi)=>{
+      const chosenEl = document.querySelector(`input[name="q${qi}"]:checked`);
+      const chosen = chosenEl ? Number(chosenEl.value) : -1;
+      const isCorrect = (chosen === q.respuesta);
+      correct += isCorrect ? 1 : 0;
+      return {
+        pregunta: q.pregunta,
+        tu_respuesta: chosen >=0 ? q.opciones[chosen] : "(sin respuesta)",
+        correcta: q.opciones[q.respuesta],
+        ok: isCorrect,
+        explanation: q.explanation
+      };
+    });
+    const score = Math.round(100 * correct / Math.max(1, LAST_QUESTIONS.length));
+    setOut({ score, results });
+  }
+
+  // init
+  (function init(){ resetChunks(); })();
+</script>
+</body>
+</html>
